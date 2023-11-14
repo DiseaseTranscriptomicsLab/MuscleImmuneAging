@@ -1,0 +1,79 @@
+---
+title: "Doublets"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    code_folding: hide
+    depth: 3
+    toc: yes
+    toc_float: yes
+  pdf_document: default
+  word_document: default
+---
+
+```{r}
+suppressMessages(library(scDblFinder))
+suppressMessages(library(BiocParallel))
+```
+
+```{r}
+sce <- readRDS("/mnt/nmorais-nfs/marta/pB_joana/pC_data/sce_all-samples-after-qc.rds")
+```
+
+```{r}
+table(sce$sample)
+```
+
+```{r}
+srt <- readRDS("/mnt/nmorais-nfs/marta/pB_joana/pB_data/srt-all-samples-after-qc.rds")
+```
+
+```{r}
+sce$sample <- srt$sample
+```
+
+```{r}
+table(sce$sample)
+```
+
+```{r}
+sce <- scDblFinder(sce, samples="sample", BPPARAM=MulticoreParam(30))
+```
+
+```{r}
+table(sce$scDblFinder.class)
+```
+```{r}
+table(sce$scDblFinder.class, sce$sample)
+```
+
+```{r}
+sce$doublet <- sce$scDblFinder.class
+```
+
+```{r}
+srt$doublet <- sce$doublet
+```
+
+```{r}
+DimPlot(srt, group.by = "doublet", reduction = "tsne")
+DimPlot(srt[,srt$doublet == "doublet"],group.by = "doublet", reduction = "tsne")
+```
+
+```{r}
+sce <- sce[,sce$doublet == "singlet"]
+```
+```{r}
+#saveRDS(sce, "/mnt/nmorais-nfs/marta/pB_joana/pC_data/sce_all-samples-after-qc.rds")
+```
+
+
+
+
+
+
+
+
+
