@@ -1,0 +1,144 @@
+---
+title: "CellChat analysis of lymphoid cells"
+author: "Tiago M. Costa"
+date: "2023-07-06"
+output: html_document
+---
+
+```{r libraries, include=FALSE}
+suppressPackageStartupMessages(library(CellChat))
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(readxl))
+suppressPackageStartupMessages(library(igraph))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(tidyverse))
+```
+
+```{r load data, include=FALSE}
+srt.dpi0 <- readRDS("path/to/data.rds") %>% # replace with right path
+  subset(subset = sample %in% c("old0", "yg0")) %>%
+  subset(subset = cell_label %in% c("Mono/Macs 2", "Mono/Macs 3", "T cells", "B cells 1", "Fibrocytes", "ILC2s", "Neutrophils", "NK cells", "DC-1", "DC-2", "Mono/Macs 4")) #filter out clusters with not enough cells
+
+subdata.dpi0.young <- subset(x = srt.dpi0, subset = Condition == "Young")
+subdata.dpi0.old <- subset(x = srt.dpi0, subset = Condition == "Old")
+```
+
+```{r analysis variables, include=FALSE}
+LogFC_threshold <- 0.25
+min.cell.group <- 40
+p_val <- 0.05
+```
+
+```{r load cellchat murine database, include=FALSE}
+CellChatDB <- CellChatDB.mouse
+```
+
+```{r create cellchat objects, include=FALSE}
+cellchat.dpi0.young <- createCellChat(object = subdata.dpi0.young, group.by = "cell_label")
+cellchat.dpi0.young@DB <- CellChatDB
+
+cellchat.dpi0.old <- createCellChat(object = subdata.dpi0.old, group.by = "cell_label")
+cellchat.dpi0.old@DB <- CellChatDB
+```
+
+```{r load color palette}
+color.use <- c("#0B5B2E", "#A4479B", "#AE9CCB", "#FFA012", "#A4D17F", "#F0D018", "#48A8F5", "#F0967F", "#FACBD0", "#C0E1BE", "#39B54A")
+```
+
+```{r pre process cellchat objects, include=FALSE}
+## Young
+cellchat.dpi0.young <- subsetData(cellchat.dpi0.young)
+cellchat.dpi0.young <- identifyOverExpressedGenes(cellchat.dpi0.young)
+
+# replace genes from object@var.features with genes from MAST DEA
+Idents(subdata.dpi0.young) <- 'cell_label'
+de_genes_young <- FindAllMarkers(subdata.dpi0.young, return.thresh = p_val,
+                                    test.use = "MAST")
+
+de_genes_replace <- data.frame(clusters = de_genes_young$cluster, features = de_genes_young$gene, pvalues = de_genes_young$p_val, logFC = de_genes_young$avg_log2FC, pct.1 = de_genes_young$pct.1, pct.2 = de_genes_young$pct.2, pvalues.adj = de_genes_young$p_val_adj)
+
+cellchat.dpi0.young@var.features$features.info <- de_genes_replace
+cellchat.dpi0.young@var.features[['features']] <- de_genes_replace$features
+
+cellchat.dpi0.young <- identifyOverExpressedInteractions(cellchat.dpi0.young)
+cellchat.dpi0.young <- projectData(cellchat.dpi0.young, PPI.mouse)
+cellchat.dpi0.young <- computeCommunProb(cellchat.dpi0.young, raw.use = FALSE, population.size = FALSE)
+cellchat.dpi0.young <- filterCommunication(cellchat.dpi0.young, min.cells = min.cell.group)
+cellchat.dpi0.young <- computeCommunProbPathway(cellchat.dpi0.young)
+cellchat.dpi0.young <- aggregateNet(cellchat.dpi0.young)
+
+cellchat.dpi0.young <- netAnalysis_computeCentrality(cellchat.dpi0.young, slot.name = "netP")
+
+## Old
+cellchat.dpi0.old <- subsetData(cellchat.dpi0.old)
+cellchat.dpi0.old <- identifyOverExpressedGenes(cellchat.dpi0.old)
+
+# replace genes from object@var.features with genes from MAST DEA
+Idents(subdata.dpi0.old) <- 'cell_label'
+de_genes_old <- FindAllMarkers(subdata.dpi0.old, return.thresh = p_val,
+                                    test.use = "MAST")
+
+de_genes_replace <- data.frame(clusters = de_genes_old$cluster, features = de_genes_old$gene, pvalues = de_genes_old$p_val, logFC = de_genes_old$avg_log2FC, pct.1 = de_genes_old$pct.1, pct.2 = de_genes_old$pct.2, pvalues.adj = de_genes_old$p_val_adj)
+
+cellchat.dpi0.old@var.features$features.info <- de_genes_replace
+cellchat.dpi0.old@var.features[['features']] <- de_genes_replace$features
+
+cellchat.dpi0.old <- identifyOverExpressedInteractions(cellchat.dpi0.old)
+cellchat.dpi0.old <- projectData(cellchat.dpi0.old, PPI.mouse)
+cellchat.dpi0.old <- computeCommunProb(cellchat.dpi0.old, raw.use = FALSE, population.size = FALSE)
+cellchat.dpi0.old <- filterCommunication(cellchat.dpi0.old, min.cells = min.cell.group)
+cellchat.dpi0.old <- computeCommunProbPathway(cellchat.dpi0.old)
+cellchat.dpi0.old <- aggregateNet(cellchat.dpi0.old)
+
+cellchat.dpi0.old <- netAnalysis_computeCentrality(cellchat.dpi0.old, slot.name = "netP")
+```
+
+```{r create joint cellchat object, include=FALSE}
+object.list.dpi0 <- list(Young = cellchat.dpi0.young, Old = cellchat.dpi0.old)
+
+cellchat.dpi0 <- mergeCellChat(object.list.dpi0, add.names = names(object.list.dpi0), cell.prefix = TRUE)
+```
+
+```{r heatmap of interaction number/strength between clusters}
+gg1 <- netVisual_heatmap(cellchat.dpi0)
+gg2 <- netVisual_heatmap(cellchat.dpi0, measure = "weight")
+gg1 + gg2
+```
+
+```{r chord plot of ligand-receptor interactions between lymphoid cells}
+pos.dataset = "Old"
+features.name = pos.dataset
+cellchat.dpi0 <- identifyOverExpressedGenes(cellchat.dpi0, group.dataset = "datasets", pos.dataset = pos.dataset, features.name = features.name, only.pos = FALSE, thresh.pc = 0.1, thresh.fc = LogFC_threshold, thresh.p = p_val)
+
+# replace genes from object@var.features with genes from MAST DEA
+Idents(srt.dpi0) <- 'Condition'
+de_genes <- NULL
+
+for (i in unique(srt.dpi0@meta.data$cell_label)){
+  age.de.markers <- FindMarkers(srt.dpi0 %>% subset(subset = cell_label == i), ident.1 = "Old", ident.2 = "Young", test.use = "MAST", logfc.threshold = 0.001)
+  age.de.markers$cluster <- i
+  age.de.markers <- na.omit(age.de.markers[age.de.markers$p_val_adj < p_val,])
+  age.de.markers <- data.frame(age.de.markers, gene = rownames(age.de.markers))
+  de_genes <- rbind(de_genes, age.de.markers)
+}
+
+de_genes_replace <- data.frame(clusters = de_genes$cluster, features = de_genes$gene, pvalues = de_genes$p_val, logFC = de_genes$avg_log2FC, pct.1 = de_genes$pct.1, pct.2 = de_genes$pct.2, pvalues.adj = de_genes$p_val_adj)
+
+cellchat.dpi0@var.features$Old.info <- de_genes_replace
+cellchat.dpi0@var.features[['Old']] <- de_genes_replace$features
+
+net <- netMappingDEG(cellchat.dpi0, features.name = features.name)
+
+net.up <- subsetCommunication(cellchat.dpi0, net = net, datasets = "Old",ligand.logFC = LogFC_threshold, receptor.logFC = NULL)
+net.up.secreted <- net.up[net.up$annotation == 'Secreted Signaling',]
+net.up.contact <- net.up[net.up$annotation == 'Cell-Cell Contact',]
+net.up.ecm <- net.up[net.up$annotation == 'ECM-Receptor',]
+
+net.down <- subsetCommunication(cellchat.dpi0, net = net, datasets = "Young",ligand.logFC = -LogFC_threshold, receptor.logFC = NULL)
+net.down.secreted <- net.down[net.down$annotation == 'Secreted Signaling',]
+net.down.contact <- net.down[net.down$annotation == 'Cell-Cell Contact',]
+net.down.ecm <- net.down[net.down$annotation == 'ECM-Receptor',]
+
+netVisual_chord_gene(object.list.dpi0[[2]], sources.use = "B cells 1", targets.use = c("B cells 1", "NK cells", "T cells"), slot.name = 'net', net = net.up.contact, lab.cex = 0.8, small.gap = 3.5, title.name = paste0("Up-regulated cell-cell contact in ", names(object.list.dpi0)[2]), color.use = color.use)
+```
