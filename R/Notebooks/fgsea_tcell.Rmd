@@ -1,0 +1,77 @@
+---
+title: "T cells fGSEA analysis"
+author: "Tiago M. Costa"
+date: "2023-10-30"
+output: html_document
+---
+
+```{r libraries, include=FALSE}
+suppressMessages(library(Seurat))
+suppressMessages(library(ggplot2))
+suppressMessages(library(dplyr))
+suppressMessages(library(tidyverse))
+suppressMessages(library(fgsea))
+suppressMessages(library(msigdbr))
+```
+
+```{r load data, include=FALSE}
+srt.t.dpi0 <- readRDS("path/to/data.rds") %>% # replace with right path
+  subset(subset = sample %in% c("old0", "yg0")) %>%
+  subset(subset = cell_label == "T cells")
+```
+
+```{r rank genes on log2 fold-change and run fgsea on the T cell cluster}
+Idents(srt.t.dpi0) <- "Condition"
+
+# identify DEGs between Old and Young T cells
+markers <- FindMarkers(srt.t.dpi0, logfc.threshold = 0, min.pct = 0, test.use = "MAST",
+                        ident.1 = "Old", ident.2 = "Young")
+
+# rank DEGs on log2 fold-change
+ranks <- markers$avg_log2FC
+names(ranks) <- rownames(markers)
+
+# import msigdb hallmark gene sets
+gene_sets = msigdbr(species = "mouse", category = "H")
+msigdbr_list = split(x = gene_sets$gene_symbol, f = gene_sets$gs_name)
+
+# run fgsea
+fgseaRes <- fgsea(pathways = msigdbr_list,
+                  stats = ranks,
+                  minSize=10,
+                  maxSize=500,
+                  nproc=1)
+
+# organize fgsea results
+fgseaResTidy <- fgseaRes %>%
+  as_tibble() %>%
+  arrange(desc(NES))
+
+fgseaResTidy$pathway <- substr(fgseaResTidy$pathway, 10, nchar(fgseaResTidy$pathway))
+fgseaResTidy$pathway <- gsub("SIGNALING", "SIGN.", fgseaResTidy$pathway)
+fgseaResTidy$pathway <- gsub("IL2_STAT5", "IL2-STAT5", fgseaResTidy$pathway)
+fgseaResTidy$pathway <- gsub("_", " ", fgseaResTidy$pathway)
+
+# plot NES for gene sets above the set threshold
+ggplot(fgseaResTidy %>% filter(abs(NES) > 1), aes(reorder(pathway, NES), NES)) +
+  geom_col(aes(fill=padj<0.05)) +
+  coord_flip() +
+  labs(x="Pathway", y="Normalized Enrichment Score",
+       title="Hallmark pathways (T cells, Old vs. Young)") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 10),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12))
+
+# plot NES for statistically significant gene sets with positive enrichment
+ggplot(fgseaResTidy %>% filter(NES > 1 & padj<0.05), aes(reorder(pathway, NES), NES)) +
+  geom_col() +
+  coord_flip() +
+  labs(x="Pathway", y="Normalized Enrichment Score",
+       title="Hallmark pathways (T cells, Old vs. Young)") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 13),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12))
+```
+

@@ -1,0 +1,57 @@
+---
+title: "CD45+ scRNA-Seq data Slingshot inference pipeline"
+author: "Tiago M. Costa"
+date: "2023-06-07"
+output: html_document
+---
+
+```{r load libraries, include=FALSE}
+suppressMessages(library(SingleCellExperiment))
+suppressMessages(library(dplyr))
+suppressMessages(library(slingshot))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(Seurat))
+suppressMessages(library(ggplot2))
+```
+
+```{r load data, include=FALSE}
+srt_young <- readRDS("path/to/data.rds") %>% # replace with right path
+  subset(subset = sample %in% c("yg1", "yg3", "yg5")) %>%
+  subset(subset = cell_label %in% c("lateMacs", "intMacs", "repMacs", "regMacs 1", "regMacs 2", "infMacs"))
+```
+
+```{r recompute reduced dimensions, include=FALSE}
+srt_young <- FindVariableFeatures(srt_young, selection.method = "vst", nfeatures = 3000)
+
+all.genes <- rownames(srt_young)
+srt_young <- ScaleData(srt_young, features = all.genes)
+
+srt_young <- RunPCA(srt_young, features = VariableFeatures(object = srt_young), npcs = 100)
+srt_young <- RunUMAP(srt_young, n.components = 10, features = VariableFeatures(srt_young))
+srt_young <- RunTSNE(srt_young, dim.embed = 3, dims = 1:25)
+
+sce_young <- as.SingleCellExperiment(srt_young)
+```
+
+```{r load color palette, include=FALSE}
+colors <- colorRampPalette(brewer.pal(11,'Spectral')[-6])(100)
+
+pal <- c("#DE3920", "#F07F1B", "#259638", "#28306C", "#F0D01A", "#94BCE5")
+names(pal) <- c("0", "1", "2", "3", "4", "6")
+```
+
+```{r run slingshot}
+slng_young_umap <- slingshot(data = sce_young, clusterLabels = sce_young$r06, reducedDim = "UMAP", start.clus = "4")
+
+slng_young_umap_dataset <- slingshot::SlingshotDataSet(slng_young_umap)
+
+DimPlot(srt_young, reduction = "umap", group.by = "cell_label", shuffle = TRUE, cols = c("#F0D01A", "#F07F1B", "#DE3920", "#28306C", "#94BCE5", "#259638"))
+
+plot(reducedDims(sce_young)$UMAP, col = pal[srt_young$r06], asp = 5/2, pch = 16, main = "Macrophages - Young")
+lines(slng_young_umap_dataset, lwd = 3, col = "black", type = "lineages")
+legend(x = "topright", legend = c("infMacs", "intMacs", "lateMacs", "regMacs 1", "regMacs 2", "repMacs"), pch = 16, col = c("#F0D01A", "#F07F1B", "#DE3920", "#28306C", "#94BCE5", "#259638"), bty = "n", cex = 1.25)
+
+plot(reducedDims(sce_young)$UMAP, col = pal[srt_young$r06], asp = 5/2, pch = 16, main = "Macrophages - Young")
+lines(slng_young_umap_dataset, lwd = 3, col = "black")
+legend(x = "topright", legend = c("infMacs", "intMacs", "lateMacs", "regMacs 1", "regMacs 2", "repMacs"), pch = 16, col = c("#F0D01A", "#F07F1B", "#DE3920", "#28306C", "#94BCE5", "#259638"), bty = "n", cex = 1.25)
+```
